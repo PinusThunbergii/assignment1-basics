@@ -1,0 +1,20 @@
+Problem unicode1
+a) '\x00'
+b) chr(0).__repr__() - "'\\x00'", print(chr(0)) - print nothing
+c) When print chr(0) there are no any text symbol.
+
+Problem unicode2
+a) UTF-8 use from 1 to 4 byte to encode one character UTF-16 and 32 use 2-4 bytes and 4 correspondingly, we need smaller size vocab.
+
+b) An example input byte string for which decode_utf8_bytes_to_str_wrong pro-
+duces incorrect output, with a one-sentence explanation of why the function is incorrect.
+
+Example input: "Слава Україні!"
+Function is incorrect because it decodedes only one bytes as character meanwhile utf-8 has 1-4 byte characters
+
+c)Give a two byte sequence that does not decode to any Unicode character(s).
+Deliverable: An example, with a one-sentence explanation.
+
+0xde, 0x01 because second byte must be in range 0x80-0bf for UTF-8
+
+
