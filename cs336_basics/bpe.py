@@ -1,5 +1,5 @@
 import os
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 from multiprocessing import Pool
 from tqdm import tqdm
 import time
@@ -11,15 +11,80 @@ from utils import pre_tokenize_single_chunk
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]] : 
     
-    vocab = { i:bytes([i]) for i in range(256) }
+    # vocab = { i:bytes([i]) for i in range(256) }
+    vocab = list()
+    vocab = [ bytes([i]) for i in range(256) ] + [i.encode("utf-8") for i in special_tokens]
     
     num_processes = 10
     
-    pre_tokenize(input_path, num_processes, special_tokens)
-
-    vocab = dict()
+    corpus = pre_tokenize(input_path, num_processes, special_tokens)
+    
     merges = list()
+
+    c = Counter()
+    
+    for k, v in corpus.items():
+        # t = tuple([bytes([x]) for x in list(k)])
+        for a, b in zip(k, k[1:]):
+            c[(a, b)] += v
+    
+    merge = get_max(c)
+    joined_merge = b''.join(merge)
+    vocab.append(joined_merge)
+    merges.append((merge[0], merge[1]))
+    
+    new_corpus = Counter()
+    
+    for k, v in corpus.items():
+        
+        find_pos = bfind_all(k, merge)
+        if len(find_pos) == 0:
+            new_corpus[k] = v
+            continue
+        # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
+        
+        i = 0
+        new_k = []
+        while(i < len(k)):
+            if i not in find_pos:
+                new_k.append(k[i])
+                i += 1
+            else:
+                new_k.append(joined_merge)
+                i += len(merge)
+        new_corpus[tuple(new_k)] = v
+            
     return vocab, merges
+
+def bfind_all(x: list[bytes], sub: list[bytes]) -> list[int]:
+    if len(x) < len(sub):
+        return []
+    
+    finds = []
+    pos = -1
+    
+    for i in range(0, len(x) - len(sub) + 1):
+        if sub == x[i:i+len(sub)]:
+            pos = i
+            finds.append(pos)
+        
+    return finds
+
+def bfind(x: list[bytes], sub: list[bytes], start: Optional[int] = None) -> int:
+    if start is None:
+        start = 0
+    assert start <= len(x) - len(sub) + 1
+    assert len(x) > len(sub)
+    
+    pos = -1
+    
+    for i in range(start, len(x) - len(sub) + 1):
+        if sub == x[i:i+len(sub)]:
+            pos = i
+            break
+        
+    return pos
+
 
 def pre_tokenize(input_path: str, num_processes: int, special_tokens: list[str]):
     with open(input_path, "rb") as f:
@@ -34,17 +99,39 @@ def pre_tokenize(input_path: str, num_processes: int, special_tokens: list[str])
             # Run pre-tokenization on your chunk and store the counts for each pre-token
             chunks.append(chunk)
                     
-        merge_counters = Counter()
+    merge_counters = Counter()
             
-        with Pool(num_processes) as pool:
-            pretoken_counters = list(tqdm(
-                    pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
-            ))
+    with Pool(num_processes) as pool:
+        pretoken_counters = list(tqdm(
+                pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
+        ))
             # pretokenize_chunks = pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
 
-        merge_counters = merge_pretoken_counters(pretoken_counters)
+    merge_counters = merge_pretoken_counters(pretoken_counters)
         
-    return
+    corpus = Counter()    
+        
+    for k, v in merge_counters.items():
+        t = tuple([bytes([x]) for x in list(k)])
+        corpus[t] = v
+    # return merge_counters
+    return corpus
+
+
+def get_max(x: Counter[tuple[bytes], int]) -> bytes:
+    max_value = max(x.values())
+    max_keys = [k for k, v in x.items() if v == max_value]
+    return sorted(max_keys, reverse=True)[0]
+    
+
+def create_pairs(x: Counter[tuple[bytes], int]) -> Counter[tuple[bytes], int]:
+    y = Counter()
+    
+    for k, v in x:
+        for a, b in zip(k, k[1:]):
+            y[(a, b)] += v
+    
+    return y
 
 
 def merge_pretoken_counters(counters: list[Counter[bytes, int]]):
@@ -124,7 +211,8 @@ def find_chunk_boundaries(
 
 
 def main():
-    train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 1000, ["<|endoftext|>"])
+    # train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 1000, ["<|endoftext|>"])
+    train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
     # train_bpe("./data/owt_train.txt", 1000, ["<|endoftext|>"])
     return
 
