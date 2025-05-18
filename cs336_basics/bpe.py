@@ -6,6 +6,7 @@ import time
 import regex as re
 from collections import Counter
 import cProfile
+import json
 # from utils import pre_tokenize_single_chunk
 
 
@@ -235,8 +236,24 @@ def pre_tokenize_single_chunk(chunk: str, special_tokens: list[str]) -> Counter[
         
     return pretoken_counter
 
+
+def save_to_json(object, path):
+    with open(path, "w", encoding="utf-8") as f:
+        # json.dump(object, f, ensure_ascii=False)
+        json.dump(object, f)
+
 def main():
-    train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 300, ["<|endoftext|>"])
+    import datetime
+    start = datetime.datetime.now()
+    # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
+    vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
+    vocab = { v:k.decode("utf-8", errors="ignore") for v, k in vocab.items()}
+    merges = [ (a.decode("utf-8", errors="ignore"), b.decode("utf-8", errors="ignore")) for a, b in merges]
+    stop = datetime.datetime.now()
+    elapsed = (stop - start).seconds
+    print(f"Elapsed {elapsed}s")
+    save_to_json(vocab, "vocab.json")
+    save_to_json(merges, "merges.json")
     # train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
     # train_bpe("./data/owt_train.txt", 1000, ["<|endoftext|>"])
     return
