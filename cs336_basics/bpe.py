@@ -6,7 +6,7 @@ import time
 import regex as re
 from collections import Counter
 import cProfile
-from utils import pre_tokenize_single_chunk
+# from utils import pre_tokenize_single_chunk
 
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]] : 
@@ -21,39 +21,47 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     
     merges = list()
 
-    c = Counter()
-    
-    for k, v in corpus.items():
-        # t = tuple([bytes([x]) for x in list(k)])
-        for a, b in zip(k, k[1:]):
-            c[(a, b)] += v
-    
-    merge = get_max(c)
-    joined_merge = b''.join(merge)
-    vocab.append(joined_merge)
-    merges.append((merge[0], merge[1]))
-    
-    new_corpus = Counter()
-    
-    for k, v in corpus.items():
+    while len(vocab) < vocab_size:
+        c = Counter()
         
-        find_pos = bfind_all(k, merge)
-        if len(find_pos) == 0:
-            new_corpus[k] = v
-            continue
-        # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
+        for k, v in corpus.items():
+            # t = tuple([bytes([x]) for x in list(k)])
+            for a, b in zip(k, k[1:]):
+                c[(a, b)] += v
         
-        i = 0
-        new_k = []
-        while(i < len(k)):
-            if i not in find_pos:
-                new_k.append(k[i])
-                i += 1
-            else:
-                new_k.append(joined_merge)
-                i += len(merge)
-        new_corpus[tuple(new_k)] = v
+        merge = get_max(c)
+        
+        # print(f"{len(vocab)=} {merge}")
+        
+        joined_merge = b''.join(merge)
+        vocab.append(joined_merge)
+        merges.append((merge[0], merge[1]))
+    
+        new_corpus = Counter()
+        
+        for k, v in corpus.items():
             
+            find_pos = bfind_all(k, merge)
+            if len(find_pos) == 0:
+                new_corpus[k] = v
+                continue
+            # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
+            
+            i = 0
+            new_k = []
+            while(i < len(k)):
+                if i not in find_pos:
+                    new_k.append(k[i])
+                    i += 1
+                else:
+                    new_k.append(joined_merge)
+                    i += len(merge)
+            new_corpus[tuple(new_k)] = v
+        
+        corpus = new_corpus
+
+    vocab = { i:v for i, v in enumerate(vocab)}
+
     return vocab, merges
 
 def bfind_all(x: list[bytes], sub: list[bytes]) -> list[int]:
@@ -209,10 +217,27 @@ def find_chunk_boundaries(
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
 
+def pre_tokenize_single_chunk(chunk: str, special_tokens: list[str]) -> Counter[bytes, int] :
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    
+    pat = re.compile(PAT)
+    
+    delimiter_tokens = [re.escape(x) for x in special_tokens]
+    delimiter = "|".join(delimiter_tokens)
+    delimiter = re.compile(delimiter)
+    pretoken_counter = Counter()
+    
+    for piece in re.splititer(delimiter, chunk):
+       for word in re.finditer(pat, piece):
+        #    word = word.group(0).encode("utf-8")
+           word = word.group(0).encode("utf-8")
+           pretoken_counter[word] += 1
+        
+    return pretoken_counter
 
 def main():
-    # train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 1000, ["<|endoftext|>"])
-    train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
+    train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 300, ["<|endoftext|>"])
+    # train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
     # train_bpe("./data/owt_train.txt", 1000, ["<|endoftext|>"])
     return
 
