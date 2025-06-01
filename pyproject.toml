@@ -21,6 +21,7 @@ dependencies = [
     "scalene>=1.5.51",
     "snakeviz>=2.2.2",
     "memory-profiler>=0.61.0",
+    "viztracer>=1.0.4",
 ]
 
 

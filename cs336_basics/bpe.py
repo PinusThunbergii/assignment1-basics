@@ -20,9 +20,61 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
     
     corpus = pre_tokenize(input_path, num_processes, special_tokens)
     
+    # merges = list()
+
+    # # while len(vocab) < vocab_size:
+    # for i in tqdm(range(len(vocab), vocab_size), desc="merging"):
+    #     c = Counter()
+        
+    #     for k, v in corpus.items():
+    #         # t = tuple([bytes([x]) for x in list(k)])
+    #         for a, b in zip(k, k[1:]):
+    #             c[(a, b)] += v
+        
+    #     merge = get_max(c)
+        
+    #     # print(f"{len(vocab)=} {merge}")
+        
+    #     joined_merge = b''.join(merge)
+    #     vocab.append(joined_merge)
+    #     merges.append((merge[0], merge[1]))
+    
+    #     new_corpus = Counter()
+        
+    #     for k, v in corpus.items():
+            
+    #         find_pos = bfind_all(k, merge)
+    #         if len(find_pos) == 0:
+    #             new_corpus[k] = v
+    #             continue
+    #         # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
+            
+    #         i = 0
+    #         new_k = []
+    #         while(i < len(k)):
+    #             if i not in find_pos:
+    #                 new_k.append(k[i])
+    #                 i += 1
+    #             else:
+    #                 new_k.append(joined_merge)
+    #                 i += len(merge)
+    #         new_corpus[tuple(new_k)] = v
+        
+    #     corpus = new_corpus
+
+    # vocab = { i:v for i, v in enumerate(vocab)}
+
+    # return vocab, merges
+
+    vocab, merges = create_merges(corpus, vocab, vocab_size)
+
+    return vocab, merges
+
+def create_merges(corpus: Counter[tuple[bytes]], vocab: list[bytes], vocab_size: int) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     merges = list()
 
-    while len(vocab) < vocab_size:
+    # while len(vocab) < vocab_size:
+    for i in tqdm(range(len(vocab), vocab_size), desc="merging"):
         c = Counter()
         
         for k, v in corpus.items():
@@ -95,28 +147,35 @@ def bfind(x: list[bytes], sub: list[bytes], start: Optional[int] = None) -> int:
     return pos
 
 
-def pre_tokenize(input_path: str, num_processes: int, special_tokens: list[str]):
+def make_chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def pre_tokenize(input_path: str, num_processes: int, special_tokens: list[str]) -> Counter[tuple[bytes]]:
     with open(input_path, "rb") as f:
-        boundaries = find_chunk_boundaries(f, num_processes, "<|endoftext|>".encode("utf-8"))
+        boundaries = find_chunk_boundaries(f, 200, "<|endoftext|>".encode("utf-8"))
     
         # The following is a serial implementation, but you can parallelize this 
         # by sending each start/end pair to a set of processes.
-        chunks = []    
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            chunks.append(chunk)
-                    
-    merge_counters = Counter()
-            
-    with Pool(num_processes) as pool:
-        pretoken_counters = list(tqdm(
-                pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
-        ))
-            # pretokenize_chunks = pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
-
-    merge_counters = merge_pretoken_counters(pretoken_counters)
+        merge_counters = Counter()
+        # chunks_pos = list(zip(boundaries[:-1], boundaries[1:]))
+        chunks_pos = list(make_chunks(list(zip(boundaries[:-1], boundaries[1:])), 28))
+         
+        # for chunk_pos in tqdm(make_chunks(chunks_pos, 28)):
+        for chunk_pos in tqdm(chunks_pos, desc="pretokenization"):
+            chunks = []  
+            for start, end in chunk_pos:
+                f.seek(start)
+                chunk = f.read(end - start).decode("utf-8", errors="ignore")
+                # Run pre-tokenization on your chunk and store the counts for each pre-token
+                chunks.append(chunk)
+                
+            with Pool(28) as pool:
+                pretoken_counters = list(pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks]))
+                        # pretokenize_chunks = pool.starmap(pre_tokenize_single_chunk, [ (chunk, special_tokens) for chunk in chunks])
+            pretoken_counters.append(merge_counters)
+            merge_counters = merge_pretoken_counters(pretoken_counters)
         
     corpus = Counter()    
         
@@ -245,8 +304,9 @@ def save_to_json(object, path):
 def main():
     import datetime
     start = datetime.datetime.now()
+    vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
     # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
-    vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
+    # vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
     vocab = { v:k.decode("utf-8", errors="ignore") for v, k in vocab.items()}
     merges = [ (a.decode("utf-8", errors="ignore"), b.decode("utf-8", errors="ignore")) for a, b in merges]
     stop = datetime.datetime.now()
@@ -264,3 +324,12 @@ if __name__ == '__main__':
     
     
 # scalene --html --output foo.html cs336_basics/bpe.py
+# deactivate
+# conda activate base
+# uv run pytest tests/test_train_bpe.py
+# scalene --cpu --profile-all --html --output foo.html cs336_basics/bpe.py 
+# scalene  --profile-all --html --output foo.html cs336_basics/bpe.py 
+# python -m cProfile -s cumulative  cs336_basics/bpe.py
+# python cs336_basics/bpe.py 
+# source ./.venv/bin/activate
+# viztracer cs336_basics/bpe.py 
