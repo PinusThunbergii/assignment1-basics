@@ -12,59 +12,12 @@ import json
 
 def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]] : 
     
-    # vocab = { i:bytes([i]) for i in range(256) }
     vocab = list()
     vocab = [ bytes([i]) for i in range(256) ] + [i.encode("utf-8") for i in special_tokens]
     
     num_processes = 10
     
     corpus = pre_tokenize(input_path, num_processes, special_tokens)
-    
-    # merges = list()
-
-    # # while len(vocab) < vocab_size:
-    # for i in tqdm(range(len(vocab), vocab_size), desc="merging"):
-    #     c = Counter()
-        
-    #     for k, v in corpus.items():
-    #         # t = tuple([bytes([x]) for x in list(k)])
-    #         for a, b in zip(k, k[1:]):
-    #             c[(a, b)] += v
-        
-    #     merge = get_max(c)
-        
-    #     # print(f"{len(vocab)=} {merge}")
-        
-    #     joined_merge = b''.join(merge)
-    #     vocab.append(joined_merge)
-    #     merges.append((merge[0], merge[1]))
-    
-    #     new_corpus = Counter()
-        
-    #     for k, v in corpus.items():
-            
-    #         find_pos = bfind_all(k, merge)
-    #         if len(find_pos) == 0:
-    #             new_corpus[k] = v
-    #             continue
-    #         # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
-            
-    #         i = 0
-    #         new_k = []
-    #         while(i < len(k)):
-    #             if i not in find_pos:
-    #                 new_k.append(k[i])
-    #                 i += 1
-    #             else:
-    #                 new_k.append(joined_merge)
-    #                 i += len(merge)
-    #         new_corpus[tuple(new_k)] = v
-        
-    #     corpus = new_corpus
-
-    # vocab = { i:v for i, v in enumerate(vocab)}
-
-    # return vocab, merges
 
     vocab, merges = create_merges(corpus, vocab, vocab_size)
 
@@ -304,11 +257,11 @@ def save_to_json(object, path):
 def main():
     import datetime
     start = datetime.datetime.now()
-    vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
-    # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
+    # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
+    vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
     # vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
-    vocab = { v:k.decode("utf-8", errors="ignore") for v, k in vocab.items()}
-    merges = [ (a.decode("utf-8", errors="ignore"), b.decode("utf-8", errors="ignore")) for a, b in merges]
+    vocab = { v:k.decode("utf-8", errors="replace") for v, k in vocab.items()}
+    merges = [ (a.decode("utf-8", errors="replace"), b.decode("utf-8", errors="replace")) for a, b in merges]
     stop = datetime.datetime.now()
     elapsed = (stop - start).seconds
     print(f"Elapsed {elapsed}s")
@@ -333,3 +286,5 @@ if __name__ == '__main__':
 # python cs336_basics/bpe.py 
 # source ./.venv/bin/activate
 # viztracer cs336_basics/bpe.py 
+
+# uv run pytest tests/test_tokenizer.py
