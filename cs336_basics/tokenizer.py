@@ -1,5 +1,3 @@
-
-
 from typing import Iterable, Iterator
 import regex as re
 import os
@@ -12,6 +10,7 @@ class Tokenizer:
                  merges: list[tuple[bytes, bytes]], 
                  special_tokens : list[str] | None = None):
         
+        self.unknown = u"\uFFFD".encode(encoding="utf-8", errors="replace")
         self.vocab = vocab
         self.vocab_reverse = { v:k for k, v in vocab.items()}
         self.merges = merges
@@ -21,9 +20,9 @@ class Tokenizer:
         self.pat = re.compile(self.PAT)
 
         if special_tokens != None:
-            self.special_tokens = special_tokens
+            self.special_tokens = sorted(special_tokens, key=lambda x: len(x), reverse=True)
             delimiter_tokens = [re.escape(x) for x in self.special_tokens]
-            delimiter = "|".join(delimiter_tokens)
+            delimiter = "(" + "|".join(delimiter_tokens) + ")"
             self.delimiter = re.compile(delimiter)
         else:
             self.special_tokens = None
@@ -54,16 +53,28 @@ class Tokenizer:
         return idx    
     
     def encode(self, text: str) -> list[int]:
+        
+        if self.special_tokens is None:
+            return self.encode_chunk(text)
+        
+        output = []
+        for chunk in re.splititer(self.delimiter, text):
+            if chunk in self.special_tokens:
+                b_chunk = chunk.encode(encoding="utf-8", errors="replace")
+                special_token_id = self.vocab_reverse[b_chunk]
+                output.append(special_token_id)
+            else:
+                output.extend(self.encode_chunk(chunk))
+        
+        return output
+        
+    def encode_chunk(self, text: str) -> list[int]:
         pre_tokens = []
         
-        for piece in re.splititer(self.delimiter, text):
-            for word in re.finditer(self.pat, piece):
-                pre_tokens.append(word.group(0).encode("utf-8", errors="replace"))
+ 
+        for word in re.finditer(self.pat, text):
+            pre_tokens.append(word.group(0).encode("utf-8", errors="replace"))
                 
-            
-        # for word in re.finditer(self.pat, text):
-        #     pre_tokens.append(word.group(0).encode("utf-8", errors="replace"))
-        
         output = []
         
         for pre_token in pre_tokens:
@@ -94,6 +105,10 @@ class Tokenizer:
                     if len(chars) == i:
                         break
                     
+                    if len(chars) - 1 == i:
+                        tmp_chars.append(chars[i])
+                        break
+                    
                     if chars[i] == pair_to_merge[0] and chars[i + 1] == pair_to_merge[1]:
                         tmp_chars.append(pair_to_merge[0] + pair_to_merge[1])
                         i += 2
@@ -110,33 +125,32 @@ class Tokenizer:
                     output.append(id)
                 else:
                     print(f"Not found {char}")
-                   
-            # print(output) 
-            # list(zip(tmp, tmp[1:]))
-            # [self.merges.index(x) for x in pairs]
 
-            
         return output
     
-
-    
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        return []
+        for i in iterable:
+            yield self.encode(i)
+        # return []
     
     def decode(self, ids: list[int]) -> str:
         output_bytes = bytes()
         
         for id in ids:
-            output_bytes += self.vocab[id]
+            if id in self.vocab.keys():
+                output_bytes += self.vocab[id]
+            else:
+                output_bytes += self.unknown
             
         output_str = output_bytes.decode(encoding="utf-8", errors="replace")
         return output_str
 
 if __name__ == "__main__":
-    tokenizer = Tokenizer.from_files(vocab_filepath="vocab.json", merges_filepath="merges.json", special_tokens=["<|endoftext|>"])
+    tokenizer = Tokenizer.from_files(vocab_filepath="vocab.json", merges_filepath="merges.json", special_tokens=["<|endoftext|>", "<|pad|>"])
     # test_text = "Hello world!"
     # test_text = "Hello how <|endoftext|><|endoftext|>  are you? 🙃<|endoftext|>"
     test_text = "Héllò hôw <|endoftext|><|endoftext|> are ü? 🙃<|endoftext|>"
+    test_text = 'Four score and seven years ago our fathers brought forth, on this continent, a new nation, conceived in Liberty, and ... birth of freedom—and that government of the people, by the people, for the people, shall not perish from the earth.\n'
     encoded = tokenizer.encode(test_text)
     print(encoded)
     decoded = tokenizer.decode(encoded)
