@@ -27,9 +27,7 @@ class Tokenizer:
         else:
             self.special_tokens = None
             self.delimiter = None
-    
-        # print(self.vocab_reverse)
-        
+            
     @staticmethod
     def from_files(vocab_filepath: str, merges_filepath: str, special_tokens : list[str] | None = None) :
         
@@ -53,7 +51,6 @@ class Tokenizer:
         return idx    
     
     def encode(self, text: str) -> list[int]:
-        
         if self.special_tokens is None:
             return self.encode_chunk(text)
         
@@ -70,7 +67,6 @@ class Tokenizer:
         
     def encode_chunk(self, text: str) -> list[int]:
         pre_tokens = []
-        
  
         for word in re.finditer(self.pat, text):
             pre_tokens.append(word.group(0).encode("utf-8", errors="replace"))
@@ -129,10 +125,36 @@ class Tokenizer:
         return output
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        # for i in iterable:
+        #     yield self.encode(i)
+        
+        output = []
         for i in iterable:
-            yield self.encode(i)
-        # return []
+            output.append(self.encode(i))
+        return output
+
     
+    # def decode(self, ids: list[int]) -> str:
+    #     output_bytes = bytes()
+        
+    #     for id in ids:
+    #         print(type(id))
+            
+    #         if type(id) is list:
+    #             for i in id:
+    #                 if i in self.vocab.keys():
+    #                     output_bytes += self.vocab[i]
+    #                 else:
+    #                     output_bytes += self.unknown
+    #         else:
+    #             if id in self.vocab.keys():
+    #                 output_bytes += self.vocab[id]
+    #             else:
+    #                 output_bytes += self.unknown
+            
+    #     output_str = output_bytes.decode(encoding="utf-8", errors="replace")
+    #     return output_str
+
     def decode(self, ids: list[int]) -> str:
         output_bytes = bytes()
         
