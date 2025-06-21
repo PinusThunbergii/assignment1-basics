@@ -167,21 +167,6 @@ def merge_pretoken_counters(counters: list[Counter[bytes, int]]):
     
     return a        
 
-# def pre_tokenize_single_chunk(chunk: str, special_tokens: list[str]) -> Counter[bytes, int] :
-#     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    
-#     delimiter_tokens = [re.escape(x) for x in special_tokens]
-#     delimiter = "|".join(delimiter_tokens)
-    
-#     pretoken_counter = Counter()
-    
-#     for piece in re.splititer(delimiter, chunk):
-#        for word in re.finditer(PAT, piece):
-#            word = word.group(0).encode("utf-8")
-#            pretoken_counter[word] += 1
-        
-#     return pretoken_counter
-
 def find_chunk_boundaries(
     file: BinaryIO, 
     desired_num_chunks: int, 

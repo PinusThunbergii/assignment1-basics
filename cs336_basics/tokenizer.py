@@ -30,7 +30,6 @@ class Tokenizer:
             
     @staticmethod
     def from_files(vocab_filepath: str, merges_filepath: str, special_tokens : list[str] | None = None) :
-        
         vocab = {}
         merges = []
         with open(vocab_filepath, "r") as f:
@@ -77,10 +76,7 @@ class Tokenizer:
             chars = [bytes([x]) for x in pre_token]
             
             while True:
-                
                 pairs = list(zip(chars, chars[1:]))
-                # pairs_idx = [self.get_merge_idx(pair) for pair in pairs]
-                
                 pairs_idx = []
                 
                 for pair in pairs:
@@ -125,35 +121,13 @@ class Tokenizer:
         return output
     
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        # for i in iterable:
-        #     yield self.encode(i)
-        
-        output = []
         for i in iterable:
-            output.append(self.encode(i))
-        return output
-
-    
-    # def decode(self, ids: list[int]) -> str:
-    #     output_bytes = bytes()
+            yield self.encode(i)
         
-    #     for id in ids:
-    #         print(type(id))
-            
-    #         if type(id) is list:
-    #             for i in id:
-    #                 if i in self.vocab.keys():
-    #                     output_bytes += self.vocab[i]
-    #                 else:
-    #                     output_bytes += self.unknown
-    #         else:
-    #             if id in self.vocab.keys():
-    #                 output_bytes += self.vocab[id]
-    #             else:
-    #                 output_bytes += self.unknown
-            
-    #     output_str = output_bytes.decode(encoding="utf-8", errors="replace")
-    #     return output_str
+        # output = []
+        # for i in iterable:
+        #     output.append(self.encode(i))
+        # return output
 
     def decode(self, ids: list[int]) -> str:
         output_bytes = bytes()
