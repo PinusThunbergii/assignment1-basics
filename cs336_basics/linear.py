@@ -5,7 +5,12 @@ from einops import rearrange, einsum
 
 class Linear(nn.Module):
     
-    def __init__(self, in_features: int, out_features: int, device: torch.device|None = None, dtype: torch.dtype|None = None):
+    def __init__(self, 
+                in_features: int, 
+                out_features: int, 
+                device: torch.device | None = None,
+                dtype: torch.dtype | None = None):
+        
         super().__init__()
         std = math.sqrt(2.0 / (in_features + out_features))
         w = torch.empty((out_features, in_features), dtype=dtype, device=device)
