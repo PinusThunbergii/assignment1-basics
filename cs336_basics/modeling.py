@@ -2,12 +2,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from einops import rearrange, einsum
+from einops import rearrange, einsum, reduce
 
 # deactivate
 # conda activate base
 # uv run pytest -k test_linear
 # uv run pytest -k test_embedding
+# uv run pytest -k test_rmsnorm
 
 class Linear(nn.Module):
     
@@ -57,4 +58,25 @@ class Emmbedding(nn.Module):
         # return e
         
     
+class RMSNorm(nn.Module):
     
+    def __init__(self, 
+                 d_model: int, 
+                 eps: float = 1e-5, 
+                 device: torch.device | None = None, 
+                 dtype: torch.dtype | None = None):
+        super().__init__()
+        self.d_model = d_model
+        self.eps = eps
+        self.G = nn.Parameter(torch.ones(d_model,  dtype=dtype, device=device))
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+
+        rms = torch.sqrt(reduce(x**2, "batch sequnce_length d_model -> batch sequnce_length 1", "mean") + self.eps)
+        output = einsum(x / rms, self.G, "batch sequnce_length d_model, d_model ->  batch sequnce_length d_model")
+        # output = x / rms * self.G
+        return output.to(in_dtype)
+    
+    # (batch_size, sequence_length, d_model)
