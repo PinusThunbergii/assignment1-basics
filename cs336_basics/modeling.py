@@ -10,6 +10,8 @@ from einops import rearrange, einsum, reduce
 # uv run pytest -k test_embedding
 # uv run pytest -k test_rmsnorm
 
+# uv run pytest -k test_swiglu
+
 class Linear(nn.Module):
     
     def __init__(self, 
@@ -22,9 +24,8 @@ class Linear(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         std = math.sqrt(2.0 / (in_features + out_features))
-        w = torch.empty((out_features, in_features), dtype=dtype, device=device)
-        nn.init.trunc_normal_(w, mean=0.0, std=std, a=-3.0 * std, b=3.0 * std)
-        self.W = nn.Parameter(w)
+        self.W = nn.Parameter(torch.empty((out_features, in_features), dtype=dtype, device=device))
+        nn.init.trunc_normal_(self.W.data, mean=0.0, std=std, a=-3.0 * std, b=3.0 * std)
         
     def forward(self, x: torch.Tensor) -> torch.Tensor : 
         output = einsum(self.W, x, "out_features in_features, ... in_features -> ... out_features")
@@ -36,14 +37,12 @@ class Emmbedding(nn.Module):
                 vocab_size: int, 
                 d_model: int, 
                 device: torch.device | None = None, 
-                dtype: torch.dtype | None = None  ):
+                dtype: torch.dtype | None = None):
         super().__init__()
         self.vocab_size = vocab_size
         self.d_model = d_model
-        std = math.sqrt(2.0 / (vocab_size + d_model))
-        e = torch.empty((vocab_size, d_model), dtype=dtype, device=device)
-        nn.init.trunc_normal_(e, mean=0.0, std=1.0, a=-3.0, b=3.0)
-        self.E = nn.Parameter(e)
+        self.E = nn.Parameter(torch.empty((vocab_size, d_model), dtype=dtype, device=device))
+        nn.init.trunc_normal_(self.E.data, mean=0.0, std=1.0, a=-3.0, b=3.0)
         # (vocab_size, d_model)
         
     
@@ -68,7 +67,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.eps = eps
-        self.G = nn.Parameter(torch.ones(d_model,  dtype=dtype, device=device))
+        self.G = nn.Parameter(torch.ones(d_model, dtype=dtype, device=device))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         in_dtype = x.dtype
@@ -80,3 +79,23 @@ class RMSNorm(nn.Module):
         return output.to(in_dtype)
     
     # (batch_size, sequence_length, d_model)
+    
+
+def silu(x: torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)    
+
+class SwiGLU(nn.Module):
+    
+    def __init__(self, d_model: int, d_ff: int, device: torch.device | None = None, dtype: torch.dtype | None = None):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        
+        self.W1 = Linear(d_model, d_ff, device=device, dtype=dtype)
+        self.W2 = Linear(d_ff, d_model, device=device, dtype=dtype)
+        self.W3 = Linear(d_model, d_ff, device=device, dtype=dtype)
+        
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # " ... d_model"
+        return self.W2(silu(self.W1(x)) * self.W3(x))
