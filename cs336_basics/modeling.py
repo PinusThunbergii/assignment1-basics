@@ -9,8 +9,8 @@ from einops import rearrange, einsum, reduce
 # uv run pytest -k test_linear
 # uv run pytest -k test_embedding
 # uv run pytest -k test_rmsnorm
-
 # uv run pytest -k test_swiglu
+# uv run pytest -k test_rope
 
 class Linear(nn.Module):
     
@@ -99,3 +99,38 @@ class SwiGLU(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # " ... d_model"
         return self.W2(silu(self.W1(x)) * self.W3(x))
+    
+class RotaryPositionalEmbedding(nn.Module):
+    
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device | None = None, dtype: torch.dtype | None = None):
+        super().__init__()
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len
+        theta_i = self.theta ** (-1.0 * (torch.arange(0, self.d_k, 2, device=device, dtype=dtype)) / self.d_k)
+        positions = torch.arange(0, self.max_seq_len, 1, device=device, dtype=dtype).unsqueeze(1)
+
+        theta_i = theta_i.repeat_interleave(2).unsqueeze(0)
+        print(f"{theta_i.shape=}")
+        angles = positions * theta_i
+        print(f"{angles.shape=}")
+        cos = angles.cos() # (seq_len, d_k)
+        sin = angles.sin() # (seq_len, d_k)
+        self.register_buffer("cos", cos, persistent=False)
+        self.register_buffer("sin", sin, persistent=False)
+    
+    def forward(self, x : torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        # " ... sequence_length d_k"    " ... sequence_length"
+        # (..., seq_len)
+        
+        cos = self.cos[token_positions] # (seq_len, d_k)
+        sin = self.sin[token_positions]
+        
+        x_cos = x
+        x_sin = torch.empty_like(x)
+        x_sin[...,1::2] = x[...,0::2] 
+        x_sin[...,0::2] = -x[...,1::2]
+ 
+        x = (x_cos * cos) + (x_sin * sin)
+         
+        return x
