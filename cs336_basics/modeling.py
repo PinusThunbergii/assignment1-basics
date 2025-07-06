@@ -12,6 +12,8 @@ from einops import rearrange, einsum, reduce
 # uv run pytest -k test_swiglu
 # uv run pytest -k test_rope
 
+# uv run pytest -k test_softmax_matches_pytorch
+
 class Linear(nn.Module):
     
     def __init__(self, 
@@ -134,3 +136,10 @@ class RotaryPositionalEmbedding(nn.Module):
         x = (x_cos * cos) + (x_sin * sin)
          
         return x
+    
+def softmax(x: torch.Tensor, dim: int) -> torch.Tensor :
+    x = x - x.max()
+    exp = x.exp()
+    sum = exp.sum(dim=dim)
+    softmax = exp / sum.unsqueeze(dim)    
+    return softmax
