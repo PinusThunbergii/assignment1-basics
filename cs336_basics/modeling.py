@@ -11,8 +11,10 @@ from einops import rearrange, einsum, reduce
 # uv run pytest -k test_rmsnorm
 # uv run pytest -k test_swiglu
 # uv run pytest -k test_rope
-
 # uv run pytest -k test_softmax_matches_pytorch
+
+# uv run pytest -k test_scaled_dot_product_attention
+# uv run pytest -k test_4d_scaled_dot_product_attention
 
 class Linear(nn.Module):
     
@@ -141,5 +143,19 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor :
     x = x - x.max(dim=dim, keepdim=True).values
     exp_x = x.exp()
     sum_exp = exp_x.sum(dim=dim, keepdim=True)
-    softmax = exp_x / sum_exp.unsqueeze(dim)    
+    softmax = exp_x / sum_exp  
     return softmax
+    
+def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor):
+    # Q (batch_size, ..., seq_len, d_k)
+    # K (batch_size, ..., seq_len, d_k)
+    # v (batch_size, ..., seq_len, d_v)
+        
+    d_k = Q.shape[-1]
+
+    scores = einsum(Q, K, "... seq_len_q d_k, ... seq_len_k d_k -> ... seq_len_q seq_len_k")
+    scores = scores / math.sqrt(d_k)
+    scores = scores.masked_fill(~mask, float("-inf"))
+    softmax_scores = softmax(scores, dim=-1)
+    output = einsum(softmax_scores, V, " ... seq_len_q seq_len_k, ... seq_len_k d_v -> ... seq_len_q d_v")
+    return output
