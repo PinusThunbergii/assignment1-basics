@@ -185,14 +185,23 @@ class MultiHeadSelfAttention(nn.Module):
         self.QKV_proj = Linear(in_features=self.d_model, out_features=3 * self.d_model, device=device, dtype=dtype )
         self.O_proj = Linear(in_features=self.d_model, out_features=self.d_model)
         
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, rope: RotaryPositionalEmbedding | None, token_positions: torch.Tensor | None):
         "... seq_len d_model"
         batch_size, seq_len, d_model = x.shape
         qkv = self.QKV_proj(x)
         q, k, v = torch.split(qkv, split_size_or_sections=self.d_model, dim=-1)
+        
+        # split by heads
         q = rearrange(q, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
         k = rearrange(k, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
         v = rearrange(v, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
+        
+        if rope is not None:
+            if token_positions is None:
+                token_positions = torch.arange(start=0, end=seq_len, step=1, dtype=torch.int)
+            q = rope(q, token_positions)
+            k = rope(k, token_positions)
+         
         mask = ~torch.triu(torch.ones((seq_len, seq_len), dtype=torch.bool), diagonal=1)
         y = scaled_dot_product_attention(q, k, v, mask)
         y = rearrange(y, "... h seq_len d_k -> ... seq_len (h d_k)")

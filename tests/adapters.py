@@ -208,8 +208,16 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
-
+    
+    rope = m.RotaryPositionalEmbedding(theta=theta, d_k=d_model//num_heads, max_seq_len=max_seq_len)
+    multihead_self_attention = m.MultiHeadSelfAttention(d_model=d_model, num_heads=num_heads)
+    multihead_self_attention.load_state_dict(
+        { 
+            "QKV_proj.W" : torch.concat([q_proj_weight.clone(), k_proj_weight.clone(), v_proj_weight.clone()], dim=0),
+            "O_proj.W" : o_proj_weight.clone()
+        })
+    output = multihead_self_attention(in_features, rope, token_positions)
+    return output
 
 def run_rope(
     d_k: int,
