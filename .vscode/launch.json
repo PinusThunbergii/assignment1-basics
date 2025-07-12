@@ -11,6 +11,14 @@
             "request": "launch",
             "program": "cs336_basics/bpe.py",
             "console": "integratedTerminal"
+        },
+
+        {
+            "name": "Python Debugger: tokenizer.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "cs336_basics/tokenizer.py",
+            "console": "integratedTerminal"
         }
     ]
 }

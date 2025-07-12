@@ -15,6 +15,7 @@ from einops import rearrange, einsum, reduce
 
 # uv run pytest -k test_scaled_dot_product_attention
 # uv run pytest -k test_4d_scaled_dot_product_attention
+# uv run pytest -k test_multihead_self_attention
 
 class Linear(nn.Module):
     
@@ -146,7 +147,7 @@ def softmax(x: torch.Tensor, dim: int) -> torch.Tensor :
     softmax = exp_x / sum_exp  
     return softmax
     
-def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor):
+def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor | None = None):
     # Q (batch_size, ..., seq_len, d_k)
     # K (batch_size, ..., seq_len, d_k)
     # v (batch_size, ..., seq_len, d_v)
@@ -155,7 +156,45 @@ def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tens
 
     scores = einsum(Q, K, "... seq_len_q d_k, ... seq_len_k d_k -> ... seq_len_q seq_len_k")
     scores = scores / math.sqrt(d_k)
-    scores = scores.masked_fill(~mask, float("-inf"))
+    if mask is not None:
+        scores = scores.masked_fill(~mask, float("-inf"))
     softmax_scores = softmax(scores, dim=-1)
     output = einsum(softmax_scores, V, " ... seq_len_q seq_len_k, ... seq_len_k d_v -> ... seq_len_q d_v")
     return output
+
+class MultiHeadSelfAttention(nn.Module):
+        # d_model (int): Dimensionality of the feedforward input and output.
+        # num_heads (int): Number of heads to use in multi-headed attention.
+        # max_seq_len (int): Maximum sequence length to pre-cache if your implementation does that.
+        # q_proj_weight (Float[Tensor, "d_k d_model"]): Weights for the Q projection
+        # k_proj_weight (Float[Tensor, "d_k d_model"]): Weights for the K projection
+        # v_proj_weight (Float[Tensor, "d_k d_model"]): Weights for the V projection
+        # o_proj_weight (Float[Tensor, "d_model d_v"]): Weights for the output projection
+        # in_features (Float[Tensor, "... sequence_length d_model"]): Tensor to run your implementation on.
+    def __init__(self, 
+                 d_model: int, 
+                 num_heads: int, 
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None):
+        super().__init__()
+        self.d_model = d_model
+        
+        self.num_heads = num_heads
+        self.d_k = self.d_model // self.num_heads
+        self.d_v = self.d_model // self.num_heads
+        self.QKV_proj = Linear(in_features=self.d_model, out_features=3 * self.d_model, device=device, dtype=dtype )
+        self.O_proj = Linear(in_features=self.d_model, out_features=self.d_model)
+        
+    def forward(self, x: torch.Tensor):
+        "... seq_len d_model"
+        batch_size, seq_len, d_model = x.shape
+        qkv = self.QKV_proj(x)
+        q, k, v = torch.split(qkv, split_size_or_sections=self.d_model, dim=-1)
+        q = rearrange(q, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
+        k = rearrange(k, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
+        v = rearrange(v, "... seq_len (h d_k) -> ... h seq_len d_k", h=self.num_heads)
+        mask = ~torch.triu(torch.ones((seq_len, seq_len), dtype=torch.bool), diagonal=1)
+        y = scaled_dot_product_attention(q, k, v, mask)
+        y = rearrange(y, "... h seq_len d_k -> ... seq_len (h d_k)")
+        y = self.O_proj(y)
+        return y
