@@ -16,6 +16,7 @@ from einops import rearrange, einsum, reduce
 # uv run pytest -k test_scaled_dot_product_attention
 # uv run pytest -k test_4d_scaled_dot_product_attention
 # uv run pytest -k test_multihead_self_attention
+# uv run pytest -k test_transformer_block
 
 class Linear(nn.Module):
     
@@ -185,7 +186,10 @@ class MultiHeadSelfAttention(nn.Module):
         self.QKV_proj = Linear(in_features=self.d_model, out_features=3 * self.d_model, device=device, dtype=dtype )
         self.O_proj = Linear(in_features=self.d_model, out_features=self.d_model)
         
-    def forward(self, x: torch.Tensor, rope: RotaryPositionalEmbedding | None, token_positions: torch.Tensor | None):
+    def forward(self, 
+                x: torch.Tensor, 
+                rope: RotaryPositionalEmbedding | None = None, 
+                token_positions: torch.Tensor | None = None):
         "... seq_len d_model"
         batch_size, seq_len, d_model = x.shape
         qkv = self.QKV_proj(x)
@@ -206,4 +210,32 @@ class MultiHeadSelfAttention(nn.Module):
         y = scaled_dot_product_attention(q, k, v, mask)
         y = rearrange(y, "... h seq_len d_k -> ... seq_len (h d_k)")
         y = self.O_proj(y)
+        return y
+    
+class TransformerBlock(nn.Module):
+    
+    def __init__(self, 
+                 d_model: int, 
+                 num_heads: int, 
+                 d_ff: int,
+                 rope: RotaryPositionalEmbedding | None, 
+                 device: torch.device | None = None, 
+                 dtype: torch.dtype | None = None):
+        super().__init__()
+        
+        self.rope = rope
+        
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        
+        self.rms_norm_0 = RMSNorm(self.d_model, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(self.d_model, self.num_heads, device, dtype)
+        self.rms_norm_1 = RMSNorm(self.d_model, device=device, dtype=dtype)
+        self.ffn = SwiGLU(self.d_model, self.d_ff, device, dtype)
+        
+        
+    def forward(self, x: torch.Tensor):
+        y = x + self.attn(self.rms_norm_0(x), rope=self.rope)
+        y = y + self.ffn(self.rms_norm_1(y))
         return y
