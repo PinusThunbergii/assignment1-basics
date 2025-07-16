@@ -1,3 +1,4 @@
+from typing import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -239,3 +240,38 @@ class TransformerBlock(nn.Module):
         y = x + self.attn(self.rms_norm_0(x), rope=self.rope)
         y = y + self.ffn(self.rms_norm_1(y))
         return y
+    
+class Transformer(nn.Module):
+    
+    def __init__(self, 
+                 vocab_size: int, 
+                 seq_len: int, 
+                 num_layers: int, 
+                 d_model: int, 
+                 num_heads: int, 
+                 d_ff: int,
+                 rope_theta: float = 10000, 
+                 device: torch.device | None = None, 
+                 dtype: torch.dtype | None = None):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.seq_len = seq_len
+        self.num_layers = num_layers
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.rope = RotaryPositionalEmbedding(theta=rope_theta, d_k=d_model // num_heads, max_seq_len=seq_len)
+        
+        self.emmb = Emmbedding(vocab_size, d_model, device, dtype)
+        
+        self.layers = nn.Sequential(OrderedDict({ f"layer{i}":TransformerBlock(d_model, num_heads, d_ff, self.rope, device, dtype) for i in range(self.num_layers)}))
+        self.last_norm = RMSNorm(d_model, device=device, dtype=dtype)
+        self.last_linear = Linear(d_model, vocab_size, device, dtype)
+        
+    def forward(self, x: torch.Tensor):
+        x = self.emmb(x)
+        x = self.layers(x)
+        x = self.last_norm(x)
+        x = self.last_linear(x)
+        # x = softmax(x, -1)
+        return x

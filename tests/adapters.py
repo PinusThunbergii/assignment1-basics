@@ -318,7 +318,7 @@ def run_transformer_block(
 
     transformer.load_state_dict({
         "rms_norm_0.G" : weights["ln1.weight"],
-        "attn.QKV_proj.W" : torch.concat([weights["attn.q_proj.weight"].clone(), weights["attn.k_proj.weight"].clone(), weights["attn.v_proj.weight"]], dim=0),
+        "attn.QKV_proj.W" : torch.concat([weights["attn.q_proj.weight"], weights["attn.k_proj.weight"], weights["attn.v_proj.weight"]], dim=0),
         "attn.O_proj.W" : weights["attn.output_proj.weight"],
         "rms_norm_1.G" : weights["ln2.weight"],
         "ffn.W1.W" : weights["ffn.w1.weight"],
@@ -408,7 +408,31 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    transformer = m.Transformer(vocab_size=vocab_size, seq_len=context_length, num_layers=num_layers, d_ff=d_ff, num_heads=num_heads, d_model=d_model, rope_theta=rope_theta)
+    
+    state_dict = {}
+    state_dict["emmb.E"] = weights["token_embeddings.weight"]
+    for i in range(num_layers):
+        state_dict[f"layers.layer{i}.rms_norm_0.G"] = weights[f"layers.{i}.ln1.weight"]
+        state_dict[f"layers.layer{i}.attn.QKV_proj.W"] = torch.concat(
+            [
+                weights[f"layers.{i}.attn.q_proj.weight"],
+                weights[f"layers.{i}.attn.k_proj.weight"],
+                weights[f"layers.{i}.attn.v_proj.weight"]
+            ], dim=0)
+        state_dict[f"layers.layer{i}.attn.O_proj.W"] = weights[f"layers.{i}.attn.output_proj.weight"]
+        state_dict[f"layers.layer{i}.ffn.W1.W"] = weights[f"layers.{i}.ffn.w1.weight"]
+        state_dict[f"layers.layer{i}.ffn.W2.W"] = weights[f"layers.{i}.ffn.w2.weight"]
+        state_dict[f"layers.layer{i}.ffn.W3.W"] = weights[f"layers.{i}.ffn.w3.weight"]
+        state_dict[f"layers.layer{i}.rms_norm_1.G"] = weights[f"layers.{i}.ln2.weight"]
+    
+    state_dict["last_norm.G"] = weights["ln_final.weight"]
+    state_dict["last_linear.W"] = weights["lm_head.weight"]
+    
+    transformer.load_state_dict(state_dict)
+    
+    output = transformer(in_indices)
+    return output
 
 
 def run_rmsnorm(
