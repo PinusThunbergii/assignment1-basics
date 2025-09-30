@@ -10,6 +10,7 @@ import torch
 from torch import Tensor
 
 import cs336_basics.modeling as m
+import cs336_basics.loss as tu
 
 
 def run_linear(
@@ -474,7 +475,8 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    output = m.silu(in_features)
+    return output
 
 
 def run_get_batch(
@@ -531,8 +533,8 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
-
+    result = tu.cross_entropy_loss(inputs, targets)
+    return result
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
