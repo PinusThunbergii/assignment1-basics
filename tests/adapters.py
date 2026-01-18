@@ -10,7 +10,8 @@ import torch
 from torch import Tensor
 
 import cs336_basics.modeling as m
-import cs336_basics.loss as tu
+import cs336_basics.loss as l
+import cs336_basics.adamw as a
 
 
 def run_linear(
@@ -533,7 +534,7 @@ def run_cross_entropy(inputs: Float[Tensor, " batch_size vocab_size"], targets: 
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    result = tu.cross_entropy_loss(inputs, targets)
+    result = l.cross_entropy_loss(inputs, targets)
     return result
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
@@ -552,7 +553,7 @@ def get_adamw_cls() -> type[torch.optim.Optimizer]:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
-    raise NotImplementedError
+    return a.AdamWOptimizer
 
 
 def run_get_lr_cosine_schedule(
