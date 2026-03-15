@@ -12,7 +12,7 @@ from torch import Tensor
 import cs336_basics.modeling as m
 import cs336_basics.loss as l
 import cs336_basics.adamw as a
-
+import cs336_basics.lr_sheduler as ls
 
 def run_linear(
     d_in: int,
@@ -581,7 +581,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
+    return ls.lr_shed(it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
 
 
 def run_save_checkpoint(
