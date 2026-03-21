@@ -13,6 +13,8 @@ import cs336_basics.modeling as m
 import cs336_basics.loss as l
 import cs336_basics.adamw as a
 import cs336_basics.lr_sheduler as ls
+import cs336_basics.grad_clip as gc
+import cs336_basics.data_loader as d
 
 def run_linear(
     d_in: int,
@@ -500,7 +502,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return d.get_batch(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -546,7 +548,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    gc.grad_clip(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> type[torch.optim.Optimizer]:
