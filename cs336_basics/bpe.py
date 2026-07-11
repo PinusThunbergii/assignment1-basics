@@ -103,6 +103,58 @@ def create_merges(corpus: Counter[tuple[bytes,...]], vocab: list[bytes], vocab_s
         new_token = b''.join(merge)
 
         # update
+        # for word_id in affected_word_ids:
+        #     old_word = words[word_id]
+        #     word_count = word_counts[word_id]
+
+        #     old_adj_pairs = make_pairs(old_word)
+        #     old_unique_pairs = set(old_adj_pairs)
+
+        #     # pair_counts обновляем по всем occurrences, включая дубликаты
+        #     for old_adj_pair in old_adj_pairs:
+        #         pair_counts[old_adj_pair] -= word_count
+
+        #     # pair_to_words обновляем только по уникальным парам
+        #     for old_adj_pair in old_unique_pairs:
+        #         pair_to_words[old_adj_pair].discard(word_id)
+
+        #         if pair_counts.get(old_adj_pair, 0) <= 0:
+        #             pair_counts.pop(old_adj_pair, None)
+        #             pair_to_words.pop(old_adj_pair, None)
+        #         else:
+        #             heapq.heappush_max(max_heap, (pair_counts[old_adj_pair], old_adj_pair))
+
+        #     new_word: List[bytes] = list()
+        #     i = 0
+
+        #     while i < len(old_word):
+        #         if i + 1 < len(old_word) and old_word[i] == merge[0] and old_word[i + 1] == merge[1]:
+        #             new_word.append(new_token)
+        #             i += 2
+        #         else:
+        #             new_word.append(old_word[i])
+        #             i += 1
+
+        #     new_word = tuple(new_word)
+        #     words[word_id] = new_word
+            
+        #     new_adj_pairs = make_pairs(new_word)
+        #     new_unique_pairs = set(new_adj_pairs)
+
+        #     # pair_counts обновляем по всем occurrences
+        #     for new_adj_pair in new_adj_pairs:
+        #         pair_counts[new_adj_pair] += word_count
+
+        #     # pair_to_words обновляем только по уникальным парам
+        #     for new_adj_pair in new_unique_pairs:
+        #         pair_to_word = pair_to_words.get(new_adj_pair, set())
+        #         pair_to_word.add(word_id)
+        #         pair_to_words[new_adj_pair] = pair_to_word
+
+        #         heapq.heappush_max(max_heap, (pair_counts[new_adj_pair], new_adj_pair))
+
+        changed_pairs = set()
+
         for word_id in affected_word_ids:
             old_word = words[word_id]
             word_count = word_counts[word_id]
@@ -110,21 +162,18 @@ def create_merges(corpus: Counter[tuple[bytes,...]], vocab: list[bytes], vocab_s
             old_adj_pairs = make_pairs(old_word)
             old_unique_pairs = set(old_adj_pairs)
 
-            # pair_counts обновляем по всем occurrences, включая дубликаты
             for old_adj_pair in old_adj_pairs:
                 pair_counts[old_adj_pair] -= word_count
 
-            # pair_to_words обновляем только по уникальным парам
             for old_adj_pair in old_unique_pairs:
                 pair_to_words[old_adj_pair].discard(word_id)
+                changed_pairs.add(old_adj_pair)
 
                 if pair_counts.get(old_adj_pair, 0) <= 0:
                     pair_counts.pop(old_adj_pair, None)
                     pair_to_words.pop(old_adj_pair, None)
-                else:
-                    heapq.heappush_max(max_heap, (pair_counts[old_adj_pair], old_adj_pair))
 
-            new_word: List[bytes] = list()
+            new_word = []
             i = 0
 
             while i < len(old_word):
@@ -137,24 +186,29 @@ def create_merges(corpus: Counter[tuple[bytes,...]], vocab: list[bytes], vocab_s
 
             new_word = tuple(new_word)
             words[word_id] = new_word
-            
+
             new_adj_pairs = make_pairs(new_word)
             new_unique_pairs = set(new_adj_pairs)
 
-            # pair_counts обновляем по всем occurrences
             for new_adj_pair in new_adj_pairs:
                 pair_counts[new_adj_pair] += word_count
 
-            # pair_to_words обновляем только по уникальным парам
             for new_adj_pair in new_unique_pairs:
                 pair_to_word = pair_to_words.get(new_adj_pair, set())
                 pair_to_word.add(word_id)
                 pair_to_words[new_adj_pair] = pair_to_word
+                changed_pairs.add(new_adj_pair)
 
-                heapq.heappush_max(max_heap, (pair_counts[new_adj_pair], new_adj_pair))
+        # ВАЖНО: push в heap только после обработки всех affected_word_ids
+        for pair in changed_pairs:
+            count = pair_counts.get(pair, 0)
+            if count > 0:
+                heapq.heappush_max(max_heap, (count, pair))
+
 
         vocab.append(new_token)
         merges.append(merge)
+        
     new_vocab = { i:v for i, v in enumerate(vocab)}
     return new_vocab, merges
 
