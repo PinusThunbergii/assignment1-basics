@@ -1,5 +1,5 @@
 import os
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Dict, Generic, Iterable, List, Optional, Set, Tuple
 from multiprocessing import Pool
 from tqdm import tqdm
 import time
@@ -23,54 +23,195 @@ def train_bpe(input_path: str, vocab_size: int, special_tokens: list[str]) -> tu
 
     return vocab, merges
 
-def create_merges(corpus: Counter[tuple[bytes]], vocab: list[bytes], vocab_size: int) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    merges = list()
 
-    # while len(vocab) < vocab_size:
-    for i in tqdm(range(len(vocab), vocab_size), desc="merging"):
-        c = Counter()
-        
-        for k, v in corpus.items():
-            # t = tuple([bytes([x]) for x in list(k)])
-            for a, b in zip(k, k[1:]):
-                c[(a, b)] += v
-        
-        merge = get_max(c)
-        
-        # print(f"{len(vocab)=} {merge}")
-        
-        joined_merge = b''.join(merge)
-        vocab.append(joined_merge)
-        merges.append((merge[0], merge[1]))
+
+'''
+Реалистичные уровни ускорения:
+
+  1. Микрооптимизация текущего кода
+     Убрать bfind_all, slicing, i not in find_pos, заменить на один линейный проход.
+
+     Ожидаемо: 2-5x.
+
+  2. Параллелизация полного пересчета
+     Раскидать подсчет пар и применение merge по процессам.
+
+     Ожидаемо: 2-8x на большом корпусе, но на маленьком тесте может быть медленнее из-за pickle/IPC. Алгоритмически всё равно плохо.
+
+  3. Инкрементальный BPE
+     Не пересчитывать все пары каждый раз. Хранить pair_counts, pair -> affected_words, heap для max pair, и после merge обновлять только затронутые слова.
+
+     Ожидаемо: 10-100x+ на большом корпусе. Это главный выигрыш.
+
+  4. Оптимизация представления данных
+     Использовать integer token ids вместо bytes объектов в tuple.
+
+     Ожидаемо: еще 2-4x сверху, иногда больше, потому что bytes tuples дороги по памяти и hashing.
+
+  В сумме: текущий create_merges можно улучшить не на проценты, а на один-два порядка для больших данных. Самая важная мысль: параллелить текущий полный пересчет можно, но это лечит симптом.
+  Основная проблема в алгоритме: после каждого merge меняется только малая часть corpus, а код пересчитывает всё.
+'''
+
+
+'''
+
+
+push new version into heap
+old version remains in heap
+when popped:
+    compare heap count with current pair_counts[pair]
+    if stale, skip
+
+initial scan once:
+    count all pairs
+    remember where each pair occurs
+
+for each merge:
+    choose best pair from heap
+    find only words containing this pair
+    update pair counts only for those words
     
-        new_corpus = Counter()
-        
-        for k, v in corpus.items():
-            
-            find_pos = bfind_all(k, merge)
-            if len(find_pos) == 0:
-                new_corpus[k] = v
-                continue
-            # a, b, c, d, b, c, e => a, bc, d, bc, e pos [1, 4]
-            
-            i = 0
-            new_k = []
-            while(i < len(k)):
-                if i not in find_pos:
-                    new_k.append(k[i])
-                    i += 1
+'''
+
+import heapq
+
+
+def pop_max_valid(max_heap, pair_counts) -> Tuple[bytes, bytes]:
+    while len(max_heap) != 0:
+        count, pair = heapq.heappop_max(max_heap)
+
+        current_count = pair_counts.get(pair, 0)
+        # смотрим не устарела ли пара, если да идем за следующей
+        if current_count > 0 and current_count == count:
+            return pair
+
+    else:
+        raise ValueError("TODO")
+
+def create_merges(corpus: Counter[tuple[bytes,...]], vocab: list[bytes], vocab_size: int) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+
+    words = [item for item, count in corpus.items()]
+    word_counts = [count for item, count in corpus.items()]
+    pair_counts, pair_to_words = make_pair_and_counts(corpus)
+    max_heap = [(count, pair) for pair, count in pair_counts.items()]
+    heapq.heapify_max(max_heap)
+
+    merges = list()
+    for i in tqdm(range(len(vocab), vocab_size), desc="merging"):
+        merge = pop_max_valid(max_heap, pair_counts)
+        affected_word_ids = set(pair_to_words[merge])
+        new_token = b''.join(merge)
+
+        # update
+        for word_id in affected_word_ids:
+            old_word = words[word_id]
+            word_count = word_counts[word_id]
+
+            old_adj_pairs = make_pairs(old_word)
+            old_unique_pairs = set(old_adj_pairs)
+
+            # pair_counts обновляем по всем occurrences, включая дубликаты
+            for old_adj_pair in old_adj_pairs:
+                pair_counts[old_adj_pair] -= word_count
+
+            # pair_to_words обновляем только по уникальным парам
+            for old_adj_pair in old_unique_pairs:
+                pair_to_words[old_adj_pair].discard(word_id)
+
+                if pair_counts.get(old_adj_pair, 0) <= 0:
+                    pair_counts.pop(old_adj_pair, None)
+                    pair_to_words.pop(old_adj_pair, None)
                 else:
-                    new_k.append(joined_merge)
-                    i += len(merge)
-            new_corpus[tuple(new_k)] = v
+                    heapq.heappush_max(max_heap, (pair_counts[old_adj_pair], old_adj_pair))
+
+            new_word: List[bytes] = list()
+            i = 0
+
+            while i < len(old_word):
+                if i + 1 < len(old_word) and old_word[i] == merge[0] and old_word[i + 1] == merge[1]:
+                    new_word.append(new_token)
+                    i += 2
+                else:
+                    new_word.append(old_word[i])
+                    i += 1
+
+            new_word = tuple(new_word)
+            words[word_id] = new_word
+            
+            new_adj_pairs = make_pairs(new_word)
+            new_unique_pairs = set(new_adj_pairs)
+
+            # pair_counts обновляем по всем occurrences
+            for new_adj_pair in new_adj_pairs:
+                pair_counts[new_adj_pair] += word_count
+
+            # pair_to_words обновляем только по уникальным парам
+            for new_adj_pair in new_unique_pairs:
+                pair_to_word = pair_to_words.get(new_adj_pair, set())
+                pair_to_word.add(word_id)
+                pair_to_words[new_adj_pair] = pair_to_word
+
+                heapq.heappush_max(max_heap, (pair_counts[new_adj_pair], new_adj_pair))
+
+        vocab.append(new_token)
+        merges.append(merge)
+    new_vocab = { i:v for i, v in enumerate(vocab)}
+    return new_vocab, merges
+
+def update_corpus(corpus: Counter[tuple[bytes]], pair_to_merge: bytes, joined_merge: bytes):
+    new_corpus = Counter()
         
-        corpus = new_corpus
+    for k, v in corpus.items():
+        finds_pos = find_all_idx_to_update(k, pair_to_merge)
+        if len(finds_pos) == 0:
+            new_corpus[k] = v
+            continue
+            
+        i = 0
+        new_corpus_item = []
+        while(i < len(k)):
+            if i not in finds_pos:
+                new_corpus_item.append(k[i])
+                i += 1
+            else:
+                new_corpus_item.append(joined_merge)
+                i += len(pair_to_merge)
+        new_corpus[tuple(new_corpus_item)] = v
+    return new_corpus
 
-    vocab = { i:v for i, v in enumerate(vocab)}
 
-    return vocab, merges
+def make_pairs(word: Tuple[bytes,...]) -> List[Tuple[bytes, bytes]]:
+    
+    pairs: List[Tuple[bytes, bytes]] = list()
 
-def bfind_all(x: list[bytes], sub: list[bytes]) -> list[int]:
+    
+    for a, b in zip(word, word[1:]):
+        pair = (a, b)
+        pairs.append(pair)
+
+    return pairs
+    
+    
+    return
+
+def make_pair_and_counts(corpus) -> Tuple[Counter[Tuple[bytes, bytes]], Dict[Tuple[bytes, bytes], Set[int]]]: 
+    pair_counts = Counter()
+    pair_to_words: Dict[Tuple[bytes, bytes], Set[int]] = dict()
+
+
+    for i, (word, count) in enumerate(corpus.items()):
+
+        for a, b in zip(word, word[1:]):
+            pair = (a, b)
+            pair_counts[pair] += count
+
+            words_ids = pair_to_words.get(pair, set())
+            words_ids.add(i)
+            pair_to_words[pair] = words_ids
+
+    return pair_counts, pair_to_words
+
+def find_all_idx_to_update(x: list[bytes], sub: list[bytes]) -> list[int]:
     if len(x) < len(sub):
         return []
     
@@ -98,7 +239,6 @@ def bfind(x: list[bytes], sub: list[bytes], start: Optional[int] = None) -> int:
             break
         
     return pos
-
 
 def make_chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
@@ -243,15 +383,17 @@ def main():
     import datetime
     start = datetime.datetime.now()
     # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
-    vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
-    # vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
+    # vocab, merges = train_bpe("./data/TinyStoriesV2-GPT4-train.txt", 10000, ["<|endoftext|>"])
+    
+    vocab, merges = train_bpe("./data/owt_train.txt", 32000, ["<|endoftext|>"])
+
     vocab = { v:k.decode("utf-8", errors="replace") for v, k in vocab.items()}
     merges = [ (a.decode("utf-8", errors="replace"), b.decode("utf-8", errors="replace")) for a, b in merges]
     stop = datetime.datetime.now()
     elapsed = (stop - start).seconds
     print(f"Elapsed {elapsed}s")
-    save_to_json(vocab, "vocab.json")
-    save_to_json(merges, "merges.json")
+    save_to_json(vocab, "vocab_owt_train.json")
+    save_to_json(merges, "merges_owt_train.json")
     # train_bpe("./data/TinyStoriesV2-GPT4-valid.txt", 1000, ["<|endoftext|>"])
     # train_bpe("./data/owt_train.txt", 1000, ["<|endoftext|>"])
     return
